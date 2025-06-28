@@ -1,0 +1,2 @@
+[alias]
+clippy-all = "clippy --all-targets --all-features -- -W clippy::all -W clippy::pedantic -W clippy::nursery -W clippy::cargo -A clippy::cargo_common_metadata -A clippy::multiple-crate-versions"

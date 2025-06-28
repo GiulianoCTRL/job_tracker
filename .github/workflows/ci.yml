@@ -1,0 +1,190 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image with nightly toolchain
+        run: docker build -t job_tracker:ci .
+
+      - name: Run format check
+        run: docker run --rm -v ${{ github.workspace }}:/app job_tracker:ci cargo fmt -- --check
+
+      - name: Run clippy
+        run: docker run --rm -v ${{ github.workspace }}:/app job_tracker:ci cargo clippy-all
+
+      - name: Run tests
+        run: docker run --rm -v ${{ github.workspace }}:/app job_tracker:ci cargo test --verbose --all-features
+
+      - name: Build release
+        run: docker run --rm -v ${{ github.workspace }}:/app job_tracker:ci cargo build --release
+
+      - name: Run security audit
+        run: docker run --rm -v ${{ github.workspace }}:/app job_tracker:ci cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0384 --ignore RUSTSEC-2024-0436
+
+  build:
+    name: Build for ${{ matrix.os }}-${{ matrix.arch }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            artifact_name: job_tracker
+            asset_name: job_tracker-linux-x86_64
+          - os: windows-latest
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+            artifact_name: job_tracker.exe
+            asset_name: job_tracker-windows-x86_64.exe
+          - os: macos-latest
+            arch: aarch64
+            target: aarch64-apple-darwin
+            artifact_name: job_tracker
+            asset_name: job_tracker-macos-aarch64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev pkg-config libssl-dev
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install sqlite3 pkg-config openssl
+
+      - name: Install Rust nightly toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry/cache
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-cargo-registry-
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry/index
+          key: ${{ runner.os }}-${{ matrix.arch }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-cargo-index-
+
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ matrix.arch }}-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-target-
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Strip binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+
+          # Copy and rename artifacts
+          cp artifacts/job_tracker-linux-x86_64/job_tracker release/job_tracker-linux-x86_64
+          cp artifacts/job_tracker-windows-x86_64.exe/job_tracker.exe release/job_tracker-windows-x86_64.exe
+          cp artifacts/job_tracker-macos-aarch64/job_tracker release/job_tracker-macos-aarch64
+
+          # Make binaries executable
+          chmod +x release/job_tracker-linux-x86_64
+          chmod +x release/job_tracker-macos-aarch64
+
+          # Show prepared files
+          ls -la release/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release/job_tracker-linux-x86_64
+            release/job_tracker-windows-x86_64.exe
+            release/job_tracker-macos-aarch64
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Installation Instructions
+
+            ### Linux
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/job_tracker-linux-x86_64
+            chmod +x job_tracker-linux-x86_64
+            ./job_tracker-linux-x86_64
+            ```
+
+            ### Windows
+            Download `job_tracker-windows-x86_64.exe` and run it.
+
+            ### macOS
+            ```bash
+            # For Apple Silicon Macs
+            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/job_tracker-macos-aarch64
+            chmod +x job_tracker-macos-aarch64
+            ./job_tracker-macos-aarch64
+            ```
+
+            ## What's Changed
+            See the changelog below for detailed changes.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

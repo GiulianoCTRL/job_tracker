@@ -1,0 +1,35 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image with nightly toolchain
+        run: docker build -t job_tracker:coverage .
+
+      - name: Generate code coverage
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/app job_tracker:coverage \
+            bash -c "cargo install cargo-tarpaulin && cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./cobertura.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false

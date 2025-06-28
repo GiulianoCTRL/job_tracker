@@ -1,0 +1,9 @@
+services:
+  job_tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: job_tracker
+    volumes:
+      - .:/app
+    command: [./scripts/ci.sh]

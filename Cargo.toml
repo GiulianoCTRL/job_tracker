@@ -1,0 +1,19 @@
+[package]
+name = "job_tracker"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+iced = { version = "0.13.1", features = ["tokio"] }
+sqlx = { version = "0.8.6", features = [
+    "runtime-tokio",
+    "sqlite",
+    "macros",
+    "time",
+] }
+time = { version = "0.3.41", features = ["serde", "macros"] }
+tokio = { version = "1.45.1", features = ["rt-multi-thread", "macros"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+rstest = "0.25"
