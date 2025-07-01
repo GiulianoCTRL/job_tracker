@@ -19,7 +19,7 @@ RUN rustup toolchain install nightly --allow-downgrade --profile default
 RUN cargo install cargo-audit
 
 WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock rust-toolchain ./
 COPY src src/
 COPY tests tests/
 COPY scripts scripts/

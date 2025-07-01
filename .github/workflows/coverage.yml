@@ -23,7 +23,7 @@ jobs:
 
       - name: Generate code coverage
         run: |
-          docker run --rm -v ${{ github.workspace }}:/app job_tracker:coverage \
+          docker run --rm --security-opt seccomp=unconfined -v ${{ github.workspace }}:/app job_tracker:coverage \
             bash -c "cargo install cargo-tarpaulin && cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml"
 
       - name: Upload coverage to Codecov

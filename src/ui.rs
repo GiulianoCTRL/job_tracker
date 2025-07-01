@@ -333,6 +333,7 @@ impl Default for JobTrackerApp {
     }
 }
 
+#[cfg(not(tarpaulin_include))]
 impl JobTrackerApp {
     /// Creates a new job tracker application instance.
     ///
